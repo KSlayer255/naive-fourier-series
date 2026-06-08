@@ -1,0 +1,415 @@
+=== PROJECT SOURCE CODE CONTENTS ===
+================================================================================
+
+PROJECT ANALYSIS:
+- Total directories: 0
+- Total files: 10
+- Source files: 10
+- Test files: 0
+- Largest file: .\grok_plan.md (16195 bytes)
+
+FILE EXTENSIONS:
+- .md: 2
+- .py: 7
+- .toml: 1
+
+================================================================================
+
+================================================================================
+FILE: .\constants.py
+================================================================================
+
+# Shared constants for the Fourier visualization
+SCREEN_SIZE = (800, 600)
+BACKGROUND_COLOR = "black"
+CIRCLE_COLOR = (100, 100, 100)
+TEXT_COLOR = (255, 255, 255)
+LINE_COLOR = "white"
+SCALING_FACTOR = 100  # r, for visualization
+WAVE_HISTORY_LIMIT = SCREEN_SIZE[0]  # Max points in wave history
+FPS = 60
+TIME_STEP = -0.04  # Time decrement per frame
+TERM_UPDATE_DELAY = 0.1  # Delay for num_terms updates (seconds)
+
+# Axes constants
+AXIS_COLOR = (150, 150, 150)
+TICK_COLOR = (150, 150, 150)
+TICK_LENGTH = 5
+TICK_INTERVAL = 50
+NUMBER_INTERVAL = 100
+NUMBER_FONT_SIZE = 14
+
+# Coordinate constants
+ORIGIN_X = SCREEN_SIZE[0] / 8  # Epicycle origin x (100 with 800 width)
+ORIGIN_Y = SCREEN_SIZE[1] / 2  # Epicycle origin y (300 with 600 height)
+WAVE_START_X = ORIGIN_X + 200  # Wave starts 200 pixels right of origin (300)
+EPICYCLE_X_LIMIT = ORIGIN_X + 200  # Epicycle area ends at x=300
+
+================================================================================
+FILE: .\display.py
+================================================================================
+
+import pygame
+import math
+from typing import Callable
+from constants import (SCREEN_SIZE, BACKGROUND_COLOR, CIRCLE_COLOR, TEXT_COLOR,
+                      LINE_COLOR, SCALING_FACTOR, WAVE_HISTORY_LIMIT,
+                      AXIS_COLOR, TICK_COLOR, TICK_LENGTH, TICK_INTERVAL,
+                      NUMBER_INTERVAL, NUMBER_FONT_SIZE, ORIGIN_X, ORIGIN_Y,
+                      WAVE_START_X, EPICYCLE_X_LIMIT)
+
+
+def init_pygame():
+    """Initializes Pygame and returns screen and clock."""
+    pygame.init()
+    screen = pygame.display.set_mode(SCREEN_SIZE, flags=pygame.RESIZABLE)
+    clock = pygame.time.Clock()
+    return screen, clock
+
+
+def coords(x: float, y: float) -> tuple[float, float]:
+    """Converts coordinates to screen space (origin at ORIGIN_X, ORIGIN_Y)."""
+    return ORIGIN_X + x, ORIGIN_Y + y
+
+
+def draw_axes(screen: pygame.Surface, show_numbers: bool):
+    """Draws x and vertical wave axes with tick marks and optional numbers."""
+    # X-axis (y=ORIGIN_Y, x=WAVE_START_X to SCREEN_SIZE[0] for waveform displacement)
+    pygame.draw.line(screen, AXIS_COLOR, (WAVE_START_X, ORIGIN_Y), (SCREEN_SIZE[0], ORIGIN_Y), 1)
+    # Vertical axis at wave start (x=WAVE_START_X, y=0 to SCREEN_SIZE[1])
+    pygame.draw.line(screen, AXIS_COLOR, (WAVE_START_X, 0), (WAVE_START_X, SCREEN_SIZE[1]), 1)
+
+    # Tick marks and numbers
+    font = pygame.font.SysFont('Arial', NUMBER_FONT_SIZE)
+    # X-axis ticks (every 50 pixels, from 0 to SCREEN_SIZE[0]-WAVE_START_X)
+    x_range = int(SCREEN_SIZE[0] - WAVE_START_X)
+    for x in range(0, x_range + TICK_INTERVAL, TICK_INTERVAL):
+        if x != 0:
+            screen_x = WAVE_START_X + x
+            pygame.draw.line(screen, TICK_COLOR, (screen_x, ORIGIN_Y - TICK_LENGTH),
+                            (screen_x, ORIGIN_Y + TICK_LENGTH), 1)
+            if show_numbers and x % NUMBER_INTERVAL == 0:
+                value = x / SCALING_FACTOR
+                text = font.render(f"{value:.1f}", True, TEXT_COLOR)
+                screen.blit(text, (screen_x - 10, ORIGIN_Y + 10))
+    
+    # Wave axis ticks (x=WAVE_START_X, y from -ORIGIN_Y to SCREEN_SIZE[1]-ORIGIN_Y)
+    for y in range(-int(ORIGIN_Y), int(SCREEN_SIZE[1] - ORIGIN_Y) + 1, TICK_INTERVAL):
+        if y != 0:
+            screen_y = ORIGIN_Y + y
+            pygame.draw.line(screen, TICK_COLOR, (WAVE_START_X - TICK_LENGTH, screen_y),
+                            (WAVE_START_X + TICK_LENGTH, screen_y), 1)
+            if show_numbers and y % NUMBER_INTERVAL == 0:
+                value = -y / SCALING_FACTOR
+                text = font.render(f"{value:.1f}", True, TEXT_COLOR)
+                screen.blit(text, (WAVE_START_X + 10, screen_y - 5))
+
+
+def render_frame(screen: pygame.Surface, num_terms: int, time: float, wave: list,
+                 omega_0: float, a0_func: Callable[[], float],
+                 a_n: Callable[[int], float], b_n: Callable[[int], float],
+                 f_t: float, waveform: str, show_numbers: bool):
+    """Renders one frame of the visualization."""
+    screen.fill(BACKGROUND_COLOR)
+
+    # Draw axes
+    draw_axes(screen, show_numbers)
+
+    # Display settings
+    font = pygame.font.SysFont('Arial', 20)
+    text = font.render(f"Terms: {num_terms} (Hold UP/DOWN) | Reset: R | Numbers: N | Pause: SPACE",
+                      True, TEXT_COLOR)
+    screen.blit(text, (20, 20))
+
+    # Epicycle visualization
+    x, y = a0_func() * SCALING_FACTOR, 0
+    for n in range(1, num_terms + 1):
+        previous_x, previous_y = x, y
+        current_a, current_b = a_n(n), b_n(n)
+        radius = SCALING_FACTOR * (current_a**2 + current_b**2)**0.5
+        
+        x += current_a * SCALING_FACTOR * math.cos(n * omega_0 * time) + \
+             current_b * SCALING_FACTOR * math.sin(n * omega_0 * time)
+        y += -current_a * SCALING_FACTOR * math.sin(n * omega_0 * time) + \
+             current_b * SCALING_FACTOR * math.cos(n * omega_0 * time)
+
+        pygame.draw.line(screen, LINE_COLOR, coords(previous_x, previous_y), coords(x, y))
+        pygame.draw.circle(screen, CIRCLE_COLOR, coords(previous_x, previous_y),
+                          radius=abs(radius), width=1)
+
+    # Draw wave
+    if len(wave) > 2:
+        pygame.draw.aalines(screen, LINE_COLOR, False,
+                           [coords(WAVE_START_X - ORIGIN_X + i, wave[i]) for i in range(len(wave))], 1)
+
+    # Connect epicycle to wave
+    if wave:
+        pygame.draw.line(screen, LINE_COLOR, coords(x, y), coords(WAVE_START_X - ORIGIN_X, wave[0]), 1)
+
+================================================================================
+FILE: .\fourier.py
+================================================================================
+
+import math
+from typing import Callable, Tuple
+
+from sympy import cos, integrate, pi, sin, symbols
+
+
+def get_coefficients(
+    f, T: float
+) -> Tuple[Callable[[], float], Callable[[int], float], Callable[[int], float], float]:
+    """
+    Returns (a0_func, a_n, b_n, omega_0) for a symbolic function f(t)
+    with period T.
+    """
+    t = symbols("t", real=True)
+    omega_0 = 2 * pi / T
+
+    # ----- DC term (a0/2) -----
+    a0_expr = (2 / T) * integrate(f, (t, 0, T))
+    a0_val = float(a0_expr.evalf())  # force numeric evaluation
+    a0_func = lambda: a0_val / 2  # store as constant function
+
+    # ----- Helper to integrate with a concrete n -----
+    def integrate_coeff(n_val: int, trig_func):
+        """Return (2/T)*∫ f(t) * trig_func(n*ω₀*t) dt from 0 to T"""
+        integrand = f * trig_func(n_val * omega_0 * t)
+        result = (2 / T) * integrate(integrand, (t, 0, T))
+        return float(result.evalf())
+
+    def a_n(n_val: int) -> float:
+        return integrate_coeff(n_val, cos)
+
+    def b_n(n_val: int) -> float:
+        return integrate_coeff(n_val, sin)
+
+    return a0_func, a_n, b_n, omega_0
+
+
+def compute_fourier_series(
+    t: float,
+    num_terms: int,
+    omega_0: float,
+    a0_func: Callable[[], float],
+    a_n: Callable[[int], float],
+    b_n: Callable[[int], float],
+) -> float:
+    """Evaluate the Fourier series at time t."""
+    f_t = a0_func()
+    for n in range(1, num_terms + 1):
+        f_t += a_n(n) * math.cos(n * omega_0 * t) + b_n(n) * math.sin(n * omega_0 * t)
+    return f_t
+
+
+================================================================================
+FILE: .\input_handler.py
+================================================================================
+
+import pygame
+
+def handle_input(events: list[pygame.event.Event], keys: dict, current_time: float,
+                 num_terms: int, last_term_update: float, term_update_delay: float,
+                 time: float, wave: list) -> tuple[bool, int, float, float, list]:
+    """Handles user input, updating num_terms, time, and wave as needed.
+    
+    Returns: (running, num_terms, last_term_update, time, wave)
+    """
+    running = True
+
+    # Handle events
+    for event in events:
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_r:  # Reset animation
+                time = 0
+                wave = []
+                num_terms = 5
+
+    # Handle held keys for num_terms
+    if current_time - last_term_update >= term_update_delay:
+        if keys[pygame.K_UP]:
+            num_terms += 1
+            last_term_update = current_time
+        elif keys[pygame.K_DOWN] and num_terms > 1:
+            num_terms -= 1
+            last_term_update = current_time
+
+    return running, num_terms, last_term_update, time, wave
+
+
+================================================================================
+FILE: .\main.py
+================================================================================
+
+import pygame
+
+from constants import (
+    FPS,
+    SCALING_FACTOR,
+    TERM_UPDATE_DELAY,
+    TIME_STEP,
+    WAVE_HISTORY_LIMIT,
+)
+from display import init_pygame, render_frame
+from fourier import compute_fourier_series, get_coefficients
+from ui import init_ui, update_ui
+from waveforms import WAVEFORMS
+
+
+def handle_input(
+    events: list[pygame.event.Event],
+    keys: dict,
+    current_time: float,
+    num_terms: int,
+    last_term_update: float,
+    term_update_delay: float,
+    time: float,
+    wave: list,
+    show_numbers: bool,
+    paused: bool,
+) -> tuple[bool, int, float, float, list, bool, bool]:
+    """Handles user input, updating num_terms, time, wave, show_numbers, and paused."""
+    running = True
+
+    for event in events:
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_r:
+                time = 0
+                wave = []
+            elif event.key == pygame.K_n:
+                show_numbers = not show_numbers
+            elif event.key == pygame.K_SPACE:
+                paused = not paused
+
+    if current_time - last_term_update >= term_update_delay:
+        if keys[pygame.K_UP]:
+            num_terms += 1
+            last_term_update = current_time
+        elif keys[pygame.K_DOWN] and num_terms > 1:
+            num_terms -= 1
+            last_term_update = current_time
+
+    return running, num_terms, last_term_update, time, wave, show_numbers, paused
+
+
+def main():
+    # Initialize Pygame and UI
+    screen, clock = init_pygame()
+    init_ui(screen)
+
+    # Simulation state
+    time = 0
+    wave = []
+    num_terms = 5
+    last_term_update = 0
+    waveform_name = "rect"
+    expr = WAVEFORMS[waveform_name]["expr"]
+    T = WAVEFORMS[waveform_name]["T"]
+    a0_func, a_n, b_n, omega_0 = get_coefficients(expr, T)
+    show_numbers = True
+    paused = False
+
+    running = True
+    while running:
+        current_time = pygame.time.get_ticks() / 1000.0
+        events = pygame.event.get()
+        keys = pygame.key.get_pressed()
+
+        # Update UI (stub)
+        ui_params = update_ui(events)
+
+        # Handle input
+        running, num_terms, last_term_update, time, wave, show_numbers, paused = (
+            handle_input(
+                events,
+                keys,
+                current_time,
+                num_terms,
+                last_term_update,
+                TERM_UPDATE_DELAY,
+                time,
+                wave,
+                show_numbers,
+                paused,
+            )
+        )
+
+        # Compute Fourier series
+        f_t = compute_fourier_series(time, num_terms, omega_0, a0_func, a_n, b_n)
+
+        # Update wave if not paused
+        if not paused:
+            wave.insert(0, f_t * SCALING_FACTOR)
+            if len(wave) > WAVE_HISTORY_LIMIT:
+                wave.pop()
+
+        # Render frame
+        render_frame(
+            screen,
+            num_terms,
+            time,
+            wave,
+            omega_0,
+            a0_func,
+            a_n,
+            b_n,
+            f_t,
+            waveform_name,
+            show_numbers,
+        )
+
+        if not paused:
+            time += TIME_STEP
+        pygame.display.flip()
+        clock.tick(FPS)
+
+    pygame.quit()
+
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FILE: .\ui.py
+================================================================================
+
+import pygame
+# Optional: import pygame_gui
+
+
+def init_ui(screen: pygame.Surface):
+    """Stub: Initializes UI elements (e.g., sliders, buttons)."""
+    # TODO: Initialize pygame_gui manager, create sliders/buttons
+    pass
+
+
+def update_ui(events: list[pygame.event.Event]) -> dict:
+    """Stub: Processes UI events, returns updated parameters."""
+    # TODO: Handle slider changes, button clicks
+    return {}
+
+================================================================================
+FILE: .\waveforms.py
+================================================================================
+
+from sympy import Piecewise, pi, symbols
+
+t = symbols("t", real=True)
+
+# Rectangular wave (0 to π = 1, π to 2π = 0)
+rect_expr = Piecewise((1, t < pi), (0, t < 2 * pi))
+RECT_T = 2 * pi
+
+WAVEFORMS = {
+    "rect": {"expr": rect_expr, "T": RECT_T},
+    # Add more waveforms here, e.g.:
+    # "square": {"expr": Piecewise((1, t < pi), (-1, t < 2*pi)), "T": 2*pi},
+}
+
+
+

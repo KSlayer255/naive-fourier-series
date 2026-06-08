@@ -1,0 +1,22 @@
+PROJECT STRUCTURE ANALYSIS
+=========================
+
+Summary:
+- Total directories: 0
+- Total files: 10
+- Source files: 10
+- Test files: 0
+
+Structure:
+├── .python-version
+├── README.md 📄
+├── constants.py 📄
+├── display.py 📄
+├── fourier.py 📄
+├── grok_plan.md 📄
+├── input_handler.py 📄
+├── main.py 📄
+├── pyproject.toml 📄
+├── ui.py 📄
+├── uv.lock
+└── waveforms.py 📄
