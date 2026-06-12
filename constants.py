@@ -23,3 +23,10 @@ ORIGIN_X = SCREEN_SIZE[0] / 8  # Epicycle origin x (100 with 800 width)
 ORIGIN_Y = SCREEN_SIZE[1] / 2  # Epicycle origin y (300 with 600 height)
 WAVE_START_X = ORIGIN_X + 200  # Wave starts 200 pixels right of origin (300)
 EPICYCLE_X_LIMIT = ORIGIN_X + 200  # Epicycle area ends at x=300
+
+# Static mode constants (for non-periodic functions)
+STATIC_PLOT_X_START = ORIGIN_X  # left edge of the plot area
+STATIC_PLOT_X_END = SCREEN_SIZE[0] - 20  # right edge
+TRUE_FUNC_COLOR = (80, 200, 120)  # green – true function
+APPROX_COLOR = (220, 100, 60)  # orange – Fourier approximation
+SWEEP_COLOR = (200, 200, 60)  # yellow – current sweep line
