@@ -1,42 +1,91 @@
 import math
 from typing import List, Tuple
 
-from sympy import cos, integrate, pi, sin, symbols
+import numpy as np
+from scipy.integrate import quad
+from sympy import cos, integrate, lambdify, pi, sin, symbols
 
 
-def get_coefficients(
-    f, T: float, max_n: int = 50
-) -> Tuple[float, List[float], List[float], float]:
+def _numeric_fourier_coeff(f_sym, t_var, t_start, t_end, n, omega_0, kind):
     """
-    Returns (a0_half, a_coeffs, b_coeffs, omega_0) precomputed up to max_n.
-    - a0_half: DC term (float)
-    - a_coeffs: list of length (max_n+1) where a_coeffs[n] = a_n (0-index ignored)
-    - b_coeffs: similar for b_n
-    - omega_0: fundamental frequency
+    Numerically compute a_n or b_n for a given n.
+    kind: 'cos' or 'sin'
+    """
+
+    if kind == "cos":
+        integrand_sym = f_sym * cos(n * omega_0 * t_var)
+    else:
+        integrand_sym = f_sym * sin(n * omega_0 * t_var)
+    # Convert to fast numeric function
+    integrand_func = lambdify(t_var, integrand_sym, modules=["numpy", "math"])
+    T = t_end - t_start
+
+    # Handle possible singularities by ignoring tiny intervals
+    def safe_integrand(t_val):
+        try:
+            val = integrand_func(t_val)
+            return val if np.isfinite(val) else 0.0
+        except:
+            return 0.0
+
+    res, _ = quad(safe_integrand, t_start, t_end, limit=200, epsabs=1e-8)
+    return (2.0 / T) * res
+
+
+def get_coefficients(f, t_start, t_end, max_n=50, force_numeric=False):
+    """
+    Compute Fourier coefficients. If symbolic integration fails or is too slow,
+    set force_numeric=True to always use numeric integration.
     """
     t = symbols("t", real=True)
+    T = t_end - t_start
     omega_0 = 2 * pi / T
 
-    # DC term
-    a0_expr = (2 / T) * integrate(f, (t, 0, T))
-    a0_half = float(a0_expr.evalf()) / 2
+    # Try DC term symbolically first
+    try:
+        a0_expr = (2 / T) * integrate(f, (t, t_start, t_end))
+        a0_half = float(a0_expr.evalf()) / 2
+    except Exception:
+        # Fallback to numeric
+        f_num = lambdify(t, f, modules="numpy")
+        a0_val, _ = quad(lambda tv: f_num(tv), t_start, t_end, limit=200)
+        a0_half = (
+            a0_val / T
+        )  # because (2/T)*integral f dt, then divide by 2 = (1/T)*integral
+        force_numeric = True  # all coefficients numeric
 
     a_coeffs = [0.0] * (max_n + 1)
     b_coeffs = [0.0] * (max_n + 1)
 
-    # Precompute for n = 1..max_n
     for n in range(1, max_n + 1):
-        # Cosine coefficient
-        an_integrand = f * cos(n * omega_0 * t)
-        an_val = (2 / T) * integrate(an_integrand, (t, 0, T))
-        a_coeffs[n] = float(an_val.evalf())
+        if force_numeric:
+            a_coeffs[n] = _numeric_fourier_coeff(
+                f, t, t_start, t_end, n, omega_0, "cos"
+            )
+            b_coeffs[n] = _numeric_fourier_coeff(
+                f, t, t_start, t_end, n, omega_0, "sin"
+            )
+        else:
+            try:
+                an_val = (2 / T) * integrate(
+                    f * cos(n * omega_0 * t), (t, t_start, t_end)
+                )
+                a_coeffs[n] = float(an_val.evalf())
+                bn_val = (2 / T) * integrate(
+                    f * sin(n * omega_0 * t), (t, t_start, t_end)
+                )
+                b_coeffs[n] = float(bn_val.evalf())
+            except Exception:
+                # If symbolic fails for this n, switch to numeric for all remaining
+                force_numeric = True
+                a_coeffs[n] = _numeric_fourier_coeff(
+                    f, t, t_start, t_end, n, omega_0, "cos"
+                )
+                b_coeffs[n] = _numeric_fourier_coeff(
+                    f, t, t_start, t_end, n, omega_0, "sin"
+                )
 
-        # Sine coefficient
-        bn_integrand = f * sin(n * omega_0 * t)
-        bn_val = (2 / T) * integrate(bn_integrand, (t, 0, T))
-        b_coeffs[n] = float(bn_val.evalf())
-
-    return a0_half, a_coeffs, b_coeffs, omega_0
+    return a0_half, a_coeffs, b_coeffs, float(omega_0.evalf())
 
 
 def compute_fourier_series(
